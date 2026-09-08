@@ -1,0 +1,42 @@
+\begin{tblr}[         %% tabularray outer open
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]},
+hline{2}={9}{solid, black, 0.03em},
+hline{2}={2,4,6,8}{solid, black, 0.03em, l=-0.5},
+hline{2}={3,5,7}{solid, black, 0.03em, r=-0.5},
+hline{3}={1-9}{solid, black, 0.05em},
+hline{12}={1-9}{solid, black, 0.05em},
+hline{1}={1-9}{solid, black, 0.08em},
+hline{19}={1-9}{solid, black, 0.08em},
+column{3,5,7,9}={}{halign=c},
+cell{1}{1}={}{halign=c},
+cell{1}{2}={c=2}{halign=c},
+cell{1}{4}={c=2}{halign=c},
+cell{1}{6}={c=2}{halign=c},
+cell{1}{8}={c=2}{halign=c},
+cell{2-18}{1}={}{halign=l},
+cell{2-18}{2}={}{halign=c},
+cell{2-18}{4}={}{halign=c},
+cell{2-18}{6}={}{halign=c},
+cell{2-18}{8}={}{halign=c},
+}                     %% tabularray inner close
+& (1) Contribution Rate &  & (2) Activism Turnout &  & (3.1) Welfare &  & (3.2) Welfare/sec &  \\
+& Est. & p & Est. & p & Est. & p & Est. & p \\
+(Intercept) & \num{41.672} (\num{10.625}) & \num{<0.001} & \num{0.286} (\num{0.283}) & \num{0.314} & \num{433.635} (\num{42.156}) & \num{<0.001} & \num{9.688} (\num{0.942}) & \num{<0.001} \\
+condition [petition] & \num{27.674} (\num{10.747}) & \num{0.072} & \num{0.647} (\num{0.159}) & \num{<0.001} & \num{57.821} (\num{68.272}) & \num{1.000} & \num{1.449} (\num{1.517}) & \num{1.000} \\
+condition [demonstration] & \num{1.731} (\num{7.869}) & \num{1.000} &  &  & \num{-27.338} (\num{23.228}) & \num{1.000} & \num{-0.006} (\num{0.689}) & \num{1.000} \\
+condition [roadblock] & \num{2.893} (\num{11.452}) & \num{1.000} & \num{0.338} (\num{0.157}) & \num{0.197} & \num{-79.863} (\num{34.539}) & \num{0.169} & \num{0.309} (\num{0.800}) & \num{1.000} \\
+Female & \num{-6.681} (\num{6.746}) & \num{1.000} & \num{0.201} (\num{0.128}) & \num{0.505} & \num{-0.356} (\num{18.590}) & \num{1.000} & \num{0.022} (\num{0.437}) & \num{1.000} \\
+Education (years) & \num{-3.656} (\num{3.956}) & \num{1.000} & \num{-0.004} (\num{0.072}) & \num{0.951} & \num{2.221} (\num{16.497}) & \num{1.000} & \num{0.014} (\num{0.369}) & \num{1.000} \\
+Monthly income (EUR) & \num{0.001} (\num{0.003}) & \num{1.000} & \num{0.000} (\num{0.000}) & \num{0.505} & \num{0.006} (\num{0.007}) & \num{1.000} & \num{0.000} (\num{0.000}) & \num{1.000} \\
+Donated & \num{10.571} (\num{7.198}) & \num{0.855} & \num{0.146} (\num{0.103}) & \num{0.505} & \num{22.769} (\num{30.191}) & \num{1.000} & \num{0.616} (\num{0.663}) & \num{1.000} \\
+period & \num{-2.615} (\num{0.735}) & \num{0.003} & \num{-0.030} (\num{0.018}) & \num{0.505} & \num{3.033} (\num{3.117}) & \num{1.000} & \num{0.043} (\num{0.074}) & \num{1.000} \\
+Num.Obs. & \num{523} &  & \num{210} &  & \num{521} &  & \num{521} &  \\
+R2 & \num{0.171} &  & \num{0.502} &  & \num{0.202} &  & \num{0.160} &  \\
+R2 Adj. & \num{0.158} &  & \num{0.485} &  & \num{0.190} &  & \num{0.147} &  \\
+AIC & \num{4942.8} &  & \num{175.0} &  & \num{6039.8} &  & \num{2097.6} &  \\
+BIC & \num{4985.4} &  & \num{205.2} &  & \num{6082.4} &  & \num{2140.1} &  \\
+RMSE & \num{26.77} &  & \num{0.35} &  & \num{78.12} &  & \num{1.78} &  \\
+Std.Errors & by: group\_id &  & by: group\_id &  & by: group\_id &  & by: group\_id &  \\
+\end{tblr}

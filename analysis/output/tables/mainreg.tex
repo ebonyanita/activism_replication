@@ -1,0 +1,40 @@
+\begin{tblr}[         %% tabularray outer open
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]},
+hline{2}={11}{solid, black, 0.03em},
+hline{2}={2,4,6,8,10}{solid, black, 0.03em, l=-0.5},
+hline{2}={3,5,7,9}{solid, black, 0.03em, r=-0.5},
+hline{3}={1-11}{solid, black, 0.05em},
+hline{8}={1-11}{solid, black, 0.05em},
+hline{1}={1-11}{solid, black, 0.08em},
+hline{15}={1-11}{solid, black, 0.08em},
+column{3,5,7,9,11}={}{halign=c},
+cell{1}{1}={}{halign=c},
+cell{1}{10}={c=2}{halign=c},
+cell{1}{2}={c=2}{halign=c},
+cell{1}{4}={c=2}{halign=c},
+cell{1}{6}={c=2}{halign=c},
+cell{1}{8}={c=2}{halign=c},
+cell{2-14}{1}={}{halign=l},
+cell{2-14}{10}={}{halign=c},
+cell{2-14}{2}={}{halign=c},
+cell{2-14}{4}={}{halign=c},
+cell{2-14}{6}={}{halign=c},
+cell{2-14}{8}={}{halign=c},
+}                     %% tabularray inner close
+& (1) Contribution Rate &  & (2) Activism Turnout &  & (3.1) Welfare &  & (3.2) Welfare/sec &  & Efficiency &  \\
+& Est. & p & Est. & p & Est. & p & Est. & p & Est. & p \\
+(Intercept) & \num{39.524} (\num{5.189}) & \num{<0.001} & \num{0.470} (\num{0.247}) & \num{0.058} & \num{455.454} (\num{15.047}) & \num{<0.001} & \num{10.224} (\num{0.339}) & \num{<0.001} & \num{77.134} (\num{2.114}) & \num{<0.001} \\
+condition [petition] & \num{25.651} (\num{10.663}) & \num{0.049} & \num{0.723} (\num{0.108}) & \num{<0.001} & \num{57.517} (\num{64.013}) & \num{1.000} & \num{1.471} (\num{1.430}) & \num{1.000} & \num{10.504} (\num{4.012}) & \num{0.027} \\
+condition [demonstration] & \num{-0.527} (\num{8.118}) & \num{1.000} &  &  & \num{-18.611} (\num{25.323}) & \num{1.000} & \num{0.185} (\num{0.704}) & \num{1.000} & \num{0.557} (\num{3.091}) & \num{1.000} \\
+condition [roadblock] & \num{5.637} (\num{13.194}) & \num{1.000} & \num{0.393} (\num{0.169}) & \num{0.041} & \num{-74.540} (\num{31.442}) & \num{0.072} & \num{0.442} (\num{0.666}) & \num{1.000} & \num{3.646} (\num{5.778}) & \num{1.000} \\
+period & \num{-2.726} (\num{0.691}) & \num{<0.001} & \num{-0.030} (\num{0.016}) & \num{0.058} & \num{2.360} (\num{3.106}) & \num{1.000} & \num{0.026} (\num{0.071}) & \num{1.000} & \num{-1.101} (\num{0.296}) & \num{<0.001} \\
+Num.Obs. & \num{612} &  & \num{252} &  & \num{610} &  & \num{610} &  & \num{610} &  \\
+R2 & \num{0.115} &  & \num{0.417} &  & \num{0.174} &  & \num{0.109} &  & \num{0.217} &  \\
+R2 Adj. & \num{0.109} &  & \num{0.410} &  & \num{0.169} &  & \num{0.103} &  & \num{0.212} &  \\
+AIC & \num{5820.2} &  & \num{237.0} &  & \num{7056.3} &  & \num{2450.2} &  & \num{4147.5} &  \\
+BIC & \num{5846.7} &  & \num{254.6} &  & \num{7082.8} &  & \num{2476.7} &  & \num{4174.0} &  \\
+RMSE & \num{27.83} &  & \num{0.38} &  & \num{77.87} &  & \num{1.79} &  & \num{7.18} &  \\
+Std.Errors & by: group\_id &  & by: group\_id &  & by: group\_id &  & by: group\_id &  & by: group\_id &  \\
+\end{tblr}

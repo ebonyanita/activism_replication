@@ -1,0 +1,45 @@
+\begin{tblr}[         %% tabularray outer open
+]                     %% tabularray outer close
+{                     %% tabularray inner open
+colspec={Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]Q[]},
+hline{2}={11}{solid, black, 0.03em},
+hline{2}={2,4,6,8,10}{solid, black, 0.03em, l=-0.5},
+hline{2}={3,5,7,9}{solid, black, 0.03em, r=-0.5},
+hline{3}={1-11}{solid, black, 0.05em},
+hline{13}={1-11}{solid, black, 0.05em},
+hline{1}={1-11}{solid, black, 0.08em},
+hline{20}={1-11}{solid, black, 0.08em},
+column{3,5,7,9,11}={}{halign=c},
+cell{1}{1}={}{halign=c},
+cell{1}{10}={c=2}{halign=c},
+cell{1}{2}={c=2}{halign=c},
+cell{1}{4}={c=2}{halign=c},
+cell{1}{6}={c=2}{halign=c},
+cell{1}{8}={c=2}{halign=c},
+cell{2-19}{1}={}{halign=l},
+cell{2-19}{10}={}{halign=c},
+cell{2-19}{2}={}{halign=c},
+cell{2-19}{4}={}{halign=c},
+cell{2-19}{6}={}{halign=c},
+cell{2-19}{8}={}{halign=c},
+}                     %% tabularray inner close
+& (1) Contribution Rate &  & (2) Activism Turnout &  & (3.1) Welfare &  & (3.2) Welfare/sec &  & Efficiency &  \\
+& Est. & p & Est. & p & Est. & p & Est. & p & Est. & p \\
+(Intercept) & \num{29.971} (\num{8.596}) & \num{<0.001} & \num{0.470} (\num{0.137}) & \num{<0.001} & \num{441.107} (\num{31.390}) & \num{<0.001} & \num{9.905} (\num{0.700}) & \num{<0.001} & \num{73.001} (\num{3.384}) & \num{<0.001} \\
+treatment [petition] & \num{12.700} (\num{10.919}) & \num{0.476} & \num{0.723} (\num{0.113}) & \num{<0.001} & \num{18.239} (\num{40.212}) & \num{1.000} & \num{0.405} (\num{0.896}) & \num{1.000} & \num{4.941} (\num{4.347}) & \num{0.298} \\
+treatment [roadblock] & \num{14.258} (\num{11.947}) & \num{0.476} & \num{0.393} (\num{0.135}) & \num{0.005} & \num{21.926} (\num{44.015}) & \num{1.000} & \num{0.488} (\num{0.980}) & \num{1.000} & \num{6.873} (\num{4.759}) & \num{0.298} \\
+treatment round & \num{6.100} (\num{4.324}) & \num{0.476} &  &  & \num{-0.619} (\num{11.122}) & \num{1.000} & \num{0.586} (\num{0.265}) & \num{0.136} & \num{3.651} (\num{0.962}) & \num{<0.001} \\
+period & \num{-2.742} (\num{0.423}) & \num{<0.001} & \num{-0.030} (\num{0.010}) & \num{0.005} & \num{1.872} (\num{1.089}) & \num{0.345} & \num{0.014} (\num{0.026}) & \num{1.000} & \num{-1.159} (\num{0.094}) & \num{<0.001} \\
+treatment [petition] x treatment round & \num{21.130} (\num{4.158}) & \num{<0.001} &  &  & \num{60.076} (\num{10.702}) & \num{<0.001} & \num{0.929} (\num{0.255}) & \num{0.002} & \num{7.651} (\num{0.926}) & \num{<0.001} \\
+treatment [roadblock] x treatment round & \num{9.635} (\num{4.962}) & \num{0.211} &  &  & \num{-46.348} (\num{12.782}) & \num{0.002} & \num{0.467} (\num{0.304}) & \num{0.503} & \num{3.665} (\num{1.106}) & \num{0.003} \\
+SD (Intercept participant.code) & \num{16.914} &  & \num{0.225} &  & \num{0.000} &  & \num{0.000} &  & \num{0.000} &  \\
+SD (Intercept group\_id) & \num{14.055} &  & \num{0.076} &  & \num{61.364} &  & \num{1.364} &  & \num{6.669} &  \\
+SD (Observations) & \num{20.445} &  & \num{0.309} &  & \num{52.523} &  & \num{1.251} &  & \num{4.541} &  \\
+Num.Obs. & \num{612} &  & \num{252} &  & \num{610} &  & \num{610} &  & \num{610} &  \\
+R2 Marg. & \num{0.138} &  & \num{0.406} &  & \num{0.281} &  & \num{0.244} &  & \num{0.528} &  \\
+R2 Cond. & \num{0.600} &  & \num{0.626} &  &  &  &  &  &  &  \\
+AIC & \num{5545.4} &  & \num{208.4} &  & \num{6586.8} &  & \num{2078.3} &  & \num{3639.3} &  \\
+BIC & \num{5589.5} &  & \num{233.1} &  & \num{6631.0} &  & \num{2122.4} &  & \num{3683.4} &  \\
+ICC & \num{0.5} &  & \num{0.4} &  &  &  &  &  &  &  \\
+RMSE & \num{19.53} &  & \num{0.29} &  & \num{51.75} &  & \num{1.23} &  & \num{4.47} &  \\
+\end{tblr}
