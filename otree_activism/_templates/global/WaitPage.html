@@ -1,0 +1,43 @@
+{{ extends "otree/WaitPage.html" }}
+
+{{ block global_scripts }}
+    <style>
+.center-text {
+text-align: center;
+}
+
+.grid-display {
+font-family: monospace;
+}
+
+.instructions-summary {
+display: none;
+margin-top: 10px;
+padding: 10px;
+border: 1px solid #ccc;
+
+}
+
+.powered-by-otree {
+display: none !important;
+}
+
+.question-section {
+margin-bottom: 2em;
+}
+
+.soft-timer-container {
+display: none;
+font-size: 0.85em;
+
+}
+
+.soft-timer-message {
+display: none;
+font-weight: bold;
+color: red;
+
+}
+    </style>
+    <script src="{{ static 'otai-utils.js' }}"></script>
+{{ endblock }}

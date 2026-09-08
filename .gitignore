@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# R
+.RData
+.Rhistory
+.Rproj.user/
+.Ruserdata/
+
+# oTree
+db.sqlite3
+*.otreezip
+_static_root/

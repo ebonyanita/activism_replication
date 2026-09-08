@@ -1,0 +1,48 @@
+{{ extends "otree/Page.html" }}
+
+{{ block global_styles  }}
+    <style>
+.center-text {
+text-align: center;
+}
+
+.grid-display {
+font-family: monospace;
+}
+
+.instructions-summary {
+display: none;
+margin-top: 10px;
+padding: 10px;
+border: 1px solid #ccc;
+
+}
+
+.powered-by-otree {
+display: none !important;
+}
+
+.question-section {
+margin-bottom: 2em;
+}
+
+.soft-timer-container {
+font-size: 0.85em;
+margin: 10px 0;
+}
+
+.soft-timer-countdown {
+display: block;
+font-weight: bold;
+color: #333;
+}
+
+.soft-timer-message {
+display: none;
+font-weight: bold;
+color: red;
+margin-top: 5px;
+}
+    </style>
+    <script src="{{ static 'otai-utils.js' }}"></script>
+{{ endblock }}
