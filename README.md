@@ -1,6 +1,7 @@
 # Replication Package: Activism and Prosocial Behaviour
 
 Authors: Söhnke Bergmann, Ebony Granada, Shaye-Ann Hopkins
+
 Institution: WU Vienna University of Economics and Business
 
 This package contains the experimental software, the pilot data, and the
