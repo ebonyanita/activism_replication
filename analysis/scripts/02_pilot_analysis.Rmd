@@ -13,290 +13,138 @@ output:
 # Set Up
 
 ```{r setup + set wd, include=FALSE}
-rm(list=ls())
-getwd()
-
-setwd("/Volumes/Crucial 1TB/RESEARCH/1. Data/activism-github/activism/analysis")
-knitr::opts_chunk$set(echo = TRUE)
-
-library(here)
-knitr::opts_knit$set(root.dir = "../") 
-
-
-options(scipen=999, digits=4)
-
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(scipen = 999, digits = 4)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(here)
+  library(lmtest)
+  library(sandwich)
+  library(emmeans)
+  library(lme4)
+  library(lmerTest)
+  library(sjPlot)
+  library(ggeffects)
+  library(ggthemes)
+  library(ggpubr)
+  library(patchwork)
+  library(kableExtra)
+  library(gtsummary)
+  library(rempsyc)
+  library(psych)
+  library(interactions)
+  library(effectsize)
+  library(ggsignif)
+  library(paletteer)
+  library(report)
+  library(modelsummary)
+  library(corrplot)
+  library(ggdist)
+  library(performance)
+  library(survival)
+  
+  # Econometric & simulation packages
+  for (pkg in c("AER", "estimatr", "simr", "clubSandwich", "fixest", "fwildclusterboot")) {
+    if (requireNamespace(pkg, quietly = TRUE)) {
+      suppressWarnings(suppressPackageStartupMessages(library(pkg, character.only = TRUE)))
+    }
+  }
+})
+
+# Robust path resolver across VS Code, RStudio, and command-line execution
+find_path <- function(...) {
+  p1 <- here::here(...)
+  if (file.exists(p1) || dir.exists(p1)) return(p1)
+  
+  p2 <- here::here("analysis", ...)
+  if (file.exists(p2) || dir.exists(p2)) return(p2)
+  
+  p3 <- file.path(...)
+  if (file.exists(p3) || dir.exists(p3)) return(p3)
+  
+  p4 <- file.path("..", ...)
+  if (file.exists(p4) || dir.exists(p4)) return(p4)
+
+  return(p1)
+}
+
+# Repo root -- tables/results and figures/results are git-tracked at the repo
+# root and read by paper.tex via root-relative paths, regardless of where
+# here::here() resolves (analysis/ under the .Rproj, or elsewhere on the CLI)
+repo_root <- trimws(system("git rev-parse --show-toplevel", intern = TRUE))
+paper_path <- function(...) file.path(repo_root, ...)
+
+# Holm-adjusted p-values for every lm_robust model passed to modelsummary(), applied
+# per model across all non-intercept terms (matches the paper's stated methodology:
+# "we apply Holm-adjusted p-values throughout"). modelsummary's own estimate/SE/gof
+# (AIC, BIC, RMSE, R2...) are left untouched -- only the p.value column is overridden,
+# via modelsummary's tidy_custom S3 hook.
+tidy_custom.lm_robust <- function(x, ...) {
+  pp <- as.data.frame(parameters::model_parameters(x))
+  is_intercept <- pp$Parameter == "(Intercept)"
+  p_adj <- pp$p
+  p_adj[!is_intercept] <- p.adjust(p_adj[!is_intercept], method = "holm")
+  data.frame(term = pp$Parameter, p.value = p_adj)
+}
+
+# Same Holm-adjustment for the lmer (lmerTest) interaction models -- fixed effects
+# only; random-effect variance rows have no p-value and are left for modelsummary's
+# own native gof handling.
+tidy_custom.lmerModLmerTest <- function(x, ...) {
+  pp <- as.data.frame(parameters::model_parameters(x, effects = "fixed"))
+  is_intercept <- pp$Parameter == "(Intercept)"
+  p_adj <- pp$p
+  p_adj[!is_intercept] <- p.adjust(p_adj[!is_intercept], method = "holm")
+  data.frame(term = pp$Parameter, p.value = p_adj)
+}
+
+# Pretty term labels matching the paper's established style -- factor dummies as
+# "condition [level]", lag variables with underscores read as spaces
+REG_TERM_LABELS <- c(
+  "conditionpetition"       = "condition [petition]",
+  "conditiondemonstration"  = "condition [demonstration]",
+  "conditionroadblock"      = "condition [roadblock]",
+  "conditioncontrol"        = "condition [control]",
+  "others_contribution_lag" = "others contribution lag",
+  "NegDev_lag"               = "NegDev lag",
+  "PosDev_lag"               = "PosDev lag",
+  # interaction models (treatment_assigned/is_treatment_round, demonstration = reference)
+  "treatment_assignedpetition"                   = "treatment [petition]",
+  "treatment_assignedroadblock"                  = "treatment [roadblock]",
+  "is_treatment_round"                            = "treatment round",
+  "treatment_assignedpetition:is_treatment_round" = "treatment [petition] x treatment round",
+  "treatment_assignedroadblock:is_treatment_round" = "treatment [roadblock] x treatment round"
+)
+
+# modelsummary's LaTeX output wraps the table in its own \begin{table}...\end{table};
+# paper.tex already wraps each \input{} in its own table float (caption, label,
+# resizebox), so strip that outer wrapper here to avoid nesting two table floats.
+strip_table_wrapper <- function(path) {
+  ln <- readLines(path)
+  ln <- ln[!ln %in% c("\\begin{table}", "\\centering", "\\end{table}")]
+  writeLines(ln, path)
+}
+
+# estimate/statistic/shape put p in its own column next to "Estimate (SE)", matching
+# the paper's established table style, instead of modelsummary's default of stacking
+# SE and p together underneath the estimate within a single per-model column.
+save_reg_table <- function(models, path, coef_rename = REG_TERM_LABELS,
+                            estimate = "{estimate} ({std.error})",
+                            statistic = "p.value",
+                            shape = term ~ model + statistic,
+                            ...) {
+  modelsummary::modelsummary(models, output = path, coef_rename = coef_rename,
+                              estimate = estimate, statistic = statistic, shape = shape, ...)
+  strip_table_wrapper(path)
+}
 ```
 
-```{r packages, include=FALSE}
-if (!requireNamespace("pacman", quietly = TRUE)) install.packages("pacman")
-
-#install.packages("rlang")
-library(pacman)
-library(tidyverse)
-library(dplyr)
-library(ggpubr)
-library(lme4)
-library(lmerTest)
-library(sandwich)
-library(emmeans)
-library(sjPlot)
-library(ggeffects)
-library(ggthemes)
-library(report)
-library(rempsyc)
-library(AER)
-library(psych)
-library(patchwork)
-library(kableExtra)
-library(paletteer)
-library(interactions)
-library(estimatr)
-library(ggpubr)
-library(effectsize)
-library(devtools)
-library(fixest)
-library(fwildclusterboot)
-library(clubSandwich)
-library(ggsignif)
-
-report::report_system()
-
-#install.packages("rlang")
-```
+# Load Processed Data
 
 ```{r load data}
-df_raw_s1 <- read.csv(
-  "1.data/raw_s1_all_apps_wide_2026-06-09-2.csv",
-  header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA")) #36x258
-
-
-df_raw_s2 <- read.csv(
-  "1.data/raw_s2_all_apps_wide-2026-06-09-2.csv",
-  header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA")) #28x272
-
-df_wide <- bind_rows(df_raw_s1,df_raw_s2)
-
-
-#due to technical errors with the game several participants weren't able to complete the survey (we include logged responses in analysis and as a robustness check, check if results differ without these groups)
-#group.total_contribution missing from session 2 data so s2 has more columns
-
-```
-
-# Cleaning
-
-```{r missing data removal + exploration}
-
-#remove demo sessions
-df_wide <- df_wide %>%
-  filter(session.is_demo == 0) %>%
-  mutate(pct_complete = rowMeans(!is.na(.)) * 100)
-
-summary(df_wide$pct_complete)
-
-#create clean version 
-df_clean <- df_wide %>%
-  filter(!is.na(questionnaire.1.player.q3_personal_cost))
-
-table(df_wide$participant.treatment) #16+24+16/4 dem + 6 pet + 4 rb
-table(df_clean$participant.treatment) #12+16+8/3 dem + 4 pet + 2 rb; mostly roadblock data lost; lost 1 demo group + 2 petition groups + 2 RB groups
-
-
-df_clean %>% 
-  count(participant.treatment,activism.1.group.id_in_subsession,session.code) #9 groups that completed experiment, 5 didn't (in rounds 46&8); final sample has 2-4 groups/condition
-
-```
-
-The oTree data export is in wide format: one row per participant, with columns `activism.{round}.{level}.{variable}` for each of the 14 rounds. Rounds 1–7 are control rounds (no activism option); rounds 8–14 are treatment rounds (randomized to 1 of 3 activism types).
-```{r pivot longer}
-df_long <- df_wide %>%
-  # pivot all activism round columns
-  pivot_longer(
-    cols      = matches("^activism\\.\\d+\\."),
-    names_to  = c("app_round", ".value"),
-    names_pattern = "activism\\.(\\d+)\\.(.*)"
-  ) %>%
-  dplyr::mutate(app_round = as.integer(app_round))
-
-
-```
-
-## Cleaning & Main Outcomes - Long Data Set
-
-```{r rename & recode - main dvs}
-
-df_long <- df_long %>%
-  rename(
-    session_code     = session.code,
-    participant_id   = participant.id_in_session,
-    treatment_assigned = participant.treatment,
-    final_payoff     = participant.payoff, #payoff based on random round selection
-    selected_round   = participant.selected_round, #round used for payment
-    id_in_group      = `player.id_in_group`,
-    
-    #round-level vars
-    wage             = `player.wage`, #wage for each round
-    contribution     = `player.contribution`, #contribution per round
-    round_payoff     = `player.round_payoff`, #how much each player earned in that round
-    effort_score     = `player.effort_score`, #RET performance, # of grids correctly counted
-    actual_effort_time = `player.actual_effort_time`, #time for RET; 45 secs + impacted by activism decisions (so could be 35 or 40)
-    group_raw_id     = `group.id_in_subsession`,
-    num_activists    = `group.num_activists`, #number of activists in group; repeated so don't use this one
-    num_roadblockers = `group.num_roadblockers`, #s/a activism but RB condition only, drop
-    round_treatment  = `group.treatment`, #s/a participant treatment, drop
-    period           = `subsession.round_number`
-  ) %>%
-  
-  mutate(
-    # Unique group ID across sessions
-    app_round_2 = if_else(app_round >7, app_round -7,app_round),
-    group_id = paste(session_code, group_raw_id, sep = "_"),
-    participant_seat = if_else(session_code == "ahosr93r",paste(participant.label,"1", sep = "_"),
-                               if_else(session_code == "tdmddbpq",paste(participant.label,"2", sep = "_"),"")),
-
-    # Treatment round if activism (rounds 8-14)
-    is_treatment_round = as.numeric(if_else(period <=7,0,1)),
-
-    # Condition: treatment type for activism rounds, "Control" otherwise
-    condition = if_else(is_treatment_round == 1, treatment_assigned, "control"),
-    condition = factor(condition,
-                       levels = c("control", "petition", "demonstration", "roadblock")),
-    
-    # activism engagement
-    activism_rate  = if_else(is_treatment_round == 1, (num_activists/4) * 100, NA), #activism turnout % (main activism dv)
-    chose_activism = if_else(num_activists > 0, 1, 0), #if individual chose activism or not (binary) but only seeing 0s for demo - don't use this version for analysis (it's just binary if anyone in the group chose activism or not)
-
-    # Ensure numeric
-    contribution   = as.numeric(contribution),
-    wage           = as.numeric(wage),
-    chose_activism = as.numeric(chose_activism), 
-    round_payoff   = as.numeric(round_payoff),
-
-    # relative contribution: share of wage contributed (q_it = g_it / y_it)
-    relative_contribution = if_else(!is.na(wage) & wage > 0, 
-                                    (contribution / wage) * 100, NA_real_),
-    
-    # payoff vars accounting for variation in time spent on RET
-    norm_wage = wage / actual_effort_time,
-    norm_payoff = round_payoff / actual_effort_time,
-    
-    added_wage = if_else(!is.na(wage) & wage > 0,
-                         round_payoff - wage, NA_real_)) %>%
-  
-  select(-(c(participant.visited:participant.mturk_assignment_id,session.label:session.treatment,
-             player.role,questionnaire.1.player.role, 
-             group.total_contribution,player.payoff))) #remove irrel/blank columns
-  
-
-```
-
-```{r pos & neg deviation & adl cals}
-
-#Following Fehr & Gächter (2000): compute others' mean contribution and positive/negative deviations from the group mean, then lag by one period.
-
-df_long <- df_long %>%
-  group_by(group_id, period) %>%
-  mutate(
-    group_mean_contribution  = mean(contribution, na.rm = TRUE),#points contributed to pg
-    group_total_contribution = if_else(is.na(contribution),NA, 
-                                       sum(contribution, na.rm = TRUE)),
-    group_size               = if_else(is.na(contribution),NA, 
-                                      sum(!is.na(contribution))),
-    
-    # Others' mean = (group total - own contribution) / (n - 1) - TO FIX SO IT ACTUALLY USES GROUP TOTAL INSTEAD OF MEAN
-    others_contribution = if_else(group_size > 1 & !is.na(contribution),
-                                  ((group_mean_contribution * group_size) - contribution) / (group_size - 1), NA_real_),
-    
-    #group-level vars; same for each individual in group for that round
-    total_wage             = if_else(is.na(wage),NA,
-                                 sum(wage, na.rm = TRUE)), #total individual earnings per group pooled
-    welfare                = if_else(is.na(round_payoff),NA, 
-                                 sum(round_payoff, na.rm = TRUE)), #payoff post-contribution pooled
-    norm_welfare           = if_else(is.na(round_payoff),NA, 
-                                 sum(round_payoff, na.rm = TRUE) / actual_effort_time), #welfare per sec to account for time loss in costly activism conditions
-    welfare_fullcoop       = if_else(is.na(round_payoff),NA, 
-                                 sum(wage, na.rm = TRUE) * 1.6), #welfare if everyone gave everything
-    
-    n_activists            = if_else(is.na(round_payoff),NA, 
-                                 sum(num_activists, na.rm = TRUE)),
-    n_freeriders           = if_else(is.na(contribution),NA,
-                                 sum(contribution == 0, na.rm = TRUE)),
-    
-    #efficiency = group earnings / earnings with full cooperation
-    efficiency             = if_else(!(is.na(round_payoff)), 
-                                     (welfare / welfare_fullcoop) * 100, NA_real_),
-    
-    # Absolute deviations from group mean
-    NegDev = pmax(0, group_mean_contribution - contribution, na.rm = FALSE),
-    PosDev = pmax(0, contribution - group_mean_contribution, na.rm = FALSE)
-  ) %>%
-  ungroup() %>%
-  # Lag variables (for activism regression, available from period t=8)
-  arrange(participant.code, period) %>%
-  group_by(participant.code) %>%
-  
-  mutate(
-    others_contribution_lag = lag(others_contribution),
-    NegDev_lag              = if_else(period >=8, lag(NegDev),NA_real_),
-    PosDev_lag              = if_else(period >=8, lag(PosDev),NA_real_),
-    NegDev_lag_full         = lag(NegDev),
-    PosDev_lag_full         = lag(PosDev)) %>%
-  
-  ungroup() %>%
-  
-  filter(group_size == 4) #for participants that didn't finish experiment, removing where group size = 3 since that's the round where experiment stopped working for the group
-
-
-
-df_long_clean <- df_long %>%
-  filter(!is.na(questionnaire.1.player.q3_personal_cost))
-
-
-#do welfare & efficiency at group level only? repeated for each individual within group
-
-describe(df_long)
-```
-
-## Questionnaire Data (Wide)
-
-```{r questionnaire + participant-level data}
-
-#questionnaire data only - TO DO: clean all var names
-df_questionnaire <- df_wide %>%
-  select(session.code, participant.id_in_session,participant.treatment,
-         matches("^questionnaire\\.1\\.player")) %>%
-  rename(session_code   = session.code,
-         participant_id = participant.id_in_session) %>%
-  mutate(participant.code = paste(session_code, participant_id, sep = "_")) %>%
-  select(-session_code, -participant_id)
-head(df_questionnaire)
-
-#participant-level summary (mean across periods, final period, etc. - 2 rows per participant)
-df_participant <- df_long %>%
-  group_by(participant.code, group_id, session_code, treatment_assigned,condition,is_treatment_round) %>%
-  summarise(
-    mean_relative_contribution      = mean(relative_contribution, na.rm = TRUE),
-    mean_control_contribution       = mean(relative_contribution[period <= 7], na.rm = TRUE),
-    mean_treatment_contribution     = mean(relative_contribution[period > 7], na.rm = TRUE),
-    final_relative_contribution     = last(relative_contribution[!is.na(relative_contribution)]),
-    mean_num_activism               = mean(num_activists, na.rm = TRUE),
-    mean_payoff                     = mean(round_payoff, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  left_join(df_questionnaire, by = "participant.code")
-head(df_participant)
-```
-
-## Save clean data
-```{r save}
-#save as RData
-save(df_wide, df_clean,
-     df_long,df_long_clean,
-     df_participant,df_questionnaire,
-     file = "1.data/clean/clean_dfs.RData")
-
-write.csv(df_long,"1.data/clean/df_long.csv")
-
+# Load processed clean datasets (generated by 01_data_cleaning.Rmd)
+load(find_path("data", "processed", "clean_dfs.RData"))
 ```
 
 # Descriptive Statistics
@@ -307,6 +155,8 @@ write.csv(df_long,"1.data/clean/df_long.csv")
 df_long %>%
   filter(!is.na(relative_contribution)) %>%
   group_by(treatment_assigned,is_treatment_round) %>%
+  rename(Condition = treatment_assigned,
+         "Treatment Round" = is_treatment_round) %>%
   summarise(
     n                = n(),
     "Avg Contribution %" = mean(relative_contribution, na.rm = TRUE),
@@ -320,10 +170,31 @@ df_long %>%
     "Avg Efficiency" = mean(efficiency, na.rm = TRUE),
     .groups = "drop"
   ) %>%
-  kbl(digits = 3, caption = "Outcome means by condition") %>%
+  kbl(digits = 3, caption = "Outcome means by condition - all data") %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 
-unique(df_long$group_id)
+
+
+df_long_clean %>%
+  filter(!is.na(relative_contribution)) %>%
+  group_by(treatment_assigned,is_treatment_round) %>%
+  rename(Condition = treatment_assigned,
+         "Treatment Round" = is_treatment_round) %>%
+  summarise(
+    n                = n(),
+    "Avg Contribution %" = mean(relative_contribution, na.rm = TRUE),
+    "Avg Contribution % (SD)"   = sd(relative_contribution, na.rm = TRUE),
+    "Avg # of Activists"    = mean(num_activists, na.rm = TRUE),
+    "Avg Activism Rate"    = mean(player.chose_activism, na.rm = TRUE),
+    "Avg Payoff"      = mean(round_payoff, na.rm = TRUE),
+    "Avg Wage" = mean(wage, na.rm = TRUE),
+    "Avg Norm Wage" = mean(norm_wage, na.rm = TRUE),
+    "Avg Welfare" = mean(welfare, na.rm = TRUE),
+    "Avg Efficiency" = mean(efficiency, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  kbl(digits = 3, caption = "Outcome means by condition - complete data only") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 
 
 ```
@@ -350,7 +221,6 @@ df_questionnaire %>%
 ```
 
 # Main Analysis & Plots
-
 
 ```{r color palette, include=FALSE, warning=FALSE}
 
@@ -380,7 +250,8 @@ Prereg: <https://osf.io/uz3h9/overview>
 
 ## H1: Contribution Rate
 
-**Hypothesis:** Contribution(Roadblock) \< Control \< Petition \< Demonstration **Actual:** Control \< Demonstration \< Roadblock \< Petition
+**Hypothesis:** Contribution(Roadblock) \< Control \< Petition \< Demonstration 
+**Actual:** Control* \< Demonstration \< Roadblock \< Petition
 
 ### OLS (Main Specification)
 
@@ -417,6 +288,22 @@ tab_model(model_h1_ols_rob)
 emm_df <- emmeans(model_h1_ols, pairwise ~ condition, adjust = "holm")
 nice_table((emmeans(model_h1_ols, pairwise ~ condition, adjust = "holm")$emmeans))
 nice_table((emmeans(model_h1_ols, pairwise ~ condition, adjust = "holm")$contrasts))
+
+# Save pairwise contrasts (Holm-adjusted) for the appendix
+h1_contrasts_df <- as.data.frame(
+  emmeans(model_h1_ols, pairwise ~ condition, adjust = "holm")$contrasts
+) %>%
+  transmute(
+    Contrast = paste(str_to_title(gsub(" - .*", "", contrast)), "vs.",
+                      str_to_title(gsub(".*- ", "", contrast))),
+    Estimate = round(estimate, 2),
+    SE = round(SE, 2),
+    df = round(df, 0),
+    t = round(t.ratio, 2),
+    p = ifelse(p.value < 0.001, "<0.001", sprintf("%.3f", p.value))
+  )
+modelsummary::datasummary_df(h1_contrasts_df, output = paper_path("tables", "results", "h1_contrasts.tex"))
+strip_table_wrapper(paper_path("tables", "results", "h1_contrasts.tex"))
 
 
 
@@ -458,7 +345,23 @@ summary(model_h1b_ols)
 vcov_h1b_ols <- vcovCL(model_h1b_ols, cluster = ~ group_id)
 coeftest(model_h1b_ols, vcov = vcov_h1b_ols)
 
-nice_table((emmeans(model_h1b_ols, pairwise ~ treatment_assigned, adjust = "holm")$emmeans))
+nice_table((emmeans(model_h1b_ols, pairwise ~ treatment_assigned * is_treatment_round, adjust = "holm")$emmeans))
+
+# Save estimated marginal means (Condition x Phase) for the appendix
+emm_h1b_df <- as.data.frame(
+  emmeans(model_h1b_ols, pairwise ~ treatment_assigned * is_treatment_round, adjust = "holm")$emmeans
+) %>%
+  transmute(
+    Condition = str_to_title(as.character(treatment_assigned)),
+    Phase = if_else(is_treatment_round == 1, "Treatment", "Control"),
+    Mean = round(emmean, 2),
+    SE = round(SE, 2),
+    df = round(df, 1),
+    `Lower CI` = round(lower.CL, 2),
+    `Upper CI` = round(upper.CL, 2)
+  )
+modelsummary::datasummary_df(emm_h1b_df, output = paper_path("tables", "results", "emm_h1b.tex"))
+strip_table_wrapper(paper_path("tables", "results", "emm_h1b.tex"))
 
 interact_plot(model_h1b_ols, pred = "is_treatment_round",modx = "treatment_assigned",
               #plot.points = T,
@@ -499,16 +402,16 @@ sig_h1 <- tidy(emm_df$contrasts) %>%
 ggplot(tidy(emm_df$emmeans), aes(x = reorder(condition, estimate), y = estimate, colour = condition)) +
   geom_point(size = 4) +
   geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error), width = 0.1) +
-  geom_signif(
-    comparisons = map2(sig_h1$grp1, sig_h1$grp2, ~ c(.x, .y)),
-    annotations = sig_h1$stars,
-    y_position  = sig_h1$y_pos + 5,
-    tip_length  = 0.01,
-    vjust       = -0.2,
-    colour      = "darkgray") +
+  #geom_signif(
+  #  comparisons = map2(sig_h1$grp1, sig_h1$grp2, ~ c(.x, .y)),
+  #  annotations = sig_h1$stars,
+  #  y_position  = sig_h1$y_pos + 5,
+  #  tip_length  = 0.01,
+  #  vjust       = -0.2,
+  #  colour      = "darkgray") +
   scale_colour_manual(values = condition_colors) +
-  labs(title = "Estimated Marginal Means: Contribution Rate by Condition",
-       subtitle = "OLS with cluster-robust SEs (clustered by group)",
+  labs(#title = "Estimated Marginal Means: Contribution Rate by Condition",
+       #subtitle = "OLS with cluster-robust SEs (clustered by group)",
        x = "Condition", y = "Contribution Rate (0-100%)",
        colour = NULL) +
   theme_classic(base_size = 12) +
@@ -524,25 +427,29 @@ ggplot(tidy(emm_df$emmeans), aes(x = reorder(condition, estimate), y = estimate,
 
 summary(df_long$relative_contribution)
 
-df_long %>%
+fig_1_1_contribution <- df_long %>%
   ggplot(aes(x = condition, y = relative_contribution, fill = condition)) +
   ggdist::stat_halfeye(alpha = 0.7, adjust = 0.8) +
   geom_boxplot(width = 0.1, outlier.shape = NA, alpha = 0.4) +
   scale_fill_manual(values = condition_colors) +
-  labs(title = "Contribution Rate by Condition",
+  labs(#title = "Contribution Rate by Condition",
        x = "Condition", y = "Contribution Rate (0-100%)", fill = NULL) +
   theme_classic(base_size = 12) +
   theme(legend.position = "none") +
   scale_y_continuous(breaks = seq(0, 100, 25), limits = c(0, 120 + nrow(sig_h1) * 8)) +
-  coord_cartesian(ylim = c(0, 120 + nrow(sig_h1) * 8)) +
-  geom_signif(
-    comparisons = map2(sig_h1$grp1, sig_h1$grp2, ~ c(.x, .y)),
-    annotations = sig_h1$stars,
-    y_position  = 105 + (seq_len(nrow(sig_h1)) - 1) * 8,
-    tip_length  = 0.01,
-    vjust       = -0.2,
-    colour      = "darkgray")
+  coord_cartesian(ylim = c(0, 120 + nrow(sig_h1) * 8))
+  #geom_signif(
+  #  comparisons = map2(sig_h1$grp1, sig_h1$grp2, ~ c(.x, .y)),
+  #  annotations = sig_h1$stars,
+  #  y_position  = 105 + (seq_len(nrow(sig_h1)) - 1) * 8,
+  #  tip_length  = 0.01,
+  #  vjust       = -0.2,
+  #  colour      = "darkgray")
 
+fig_1_1_contribution
+
+ggsave(paper_path("figures", "results", "1.1.contribution.png"), fig_1_1_contribution,
+       width = 8, height = 5, dpi = 300, bg = "white")
 
 ```
 
@@ -593,11 +500,12 @@ p_phase <- ggplot(emm_phase, aes(x = phase, y = estimate, colour = treatment_ass
   geom_line(linewidth = 0.8) +
   geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error), width = 0.05) +
   scale_colour_manual(values = treatment_colors) +
-  labs(title = "Contribution Rate: Control vs Treatment Rounds",
+  labs(#title = "Contribution Rate: Control vs Treatment Rounds",
        x = NULL, y = "Contribution Rate (0-100%)", colour = NULL) +
   theme_classic(base_size = 12)
 
-if (nrow(bracket_data) > 0) {
+# significance-star brackets disabled (headers/stars now live in the caption, not the figure)
+if (FALSE && nrow(bracket_data) > 0) {
   p_phase <- p_phase +
     geom_segment(data = bracket_data,
                  aes(x = x_off, xend = x_off, y = y1, yend = y2),
@@ -613,9 +521,14 @@ if (nrow(bracket_data) > 0) {
               inherit.aes = FALSE, colour = "grey40", size = 4)
 }
 
-p_phase +
+fig1_panelA <- p_phase +
   coord_cartesian(xlim = c(1, 2), ylim = c(0, 60), clip = "off") +
   theme(legend.position = "top")
+
+fig1_panelA
+
+ggsave(paper_path("figures", "results", "1.2.contributionprepost.png"), fig1_panelA,
+       width = 8, height = 5, dpi = 300, bg = "white")
 
 
 ```
@@ -623,7 +536,7 @@ p_phase +
 #### 1c. Main Effects (Over Time)
 ```{r contribution over time, fig.width=9, fig.height=5}
 
-df_long %>%
+fig1_panelB <- df_long %>%
   #filter(!is.na(relative_contribution)) %>%
   group_by(period, treatment_assigned) %>%
   summarise(mean_rc = mean(relative_contribution, na.rm = TRUE),
@@ -640,7 +553,7 @@ df_long %>%
            colour = "grey40", size = 3) +
   annotate("text", x = 11,  y = Inf, label = "Treatment Period",   vjust = 1.5,
            colour = "grey40", size = 3) +
-  labs(title = "Mean Relative Contribution Over Time",
+  labs(#title = "Mean Relative Contribution Over Time",
        x = "Period", y = "Mean Relative Contribution",
        colour = NULL, fill = NULL) +
   theme_classic(base_size = 12) +
@@ -648,6 +561,10 @@ df_long %>%
   #scale_x_continuous(breaks = c(2,4,8,6,10,12,14)) +
   theme(legend.position = "top")
 
+fig1_panelB
+
+ggsave(paper_path("figures", "results", "1.4.contributionovertime.png"), fig1_panelB,
+       width = 9, height = 5, dpi = 300, bg = "white")
 
 
 df_long %>%
@@ -667,12 +584,30 @@ df_long %>%
            colour = "grey40", size = 3) +
   annotate("text", x = 11,  y = Inf, label = "Treatment Period",   vjust = 1.5,
            colour = "grey40", size = 3) +
-  labs(title = "Mean Relative Contribution Over Time",
+  labs(#title = "Mean Relative Contribution Over Time",
        x = "Period", y = "Mean Relative Contribution",
        colour = NULL, fill = NULL) +
   theme_classic(base_size = 12) +
   #scale_x_continuous(breaks = c(2,4,8,6,10,12,14)) +
   theme(legend.position = "top")
+
+```
+
+#### 1d. Figure 1: Combined Panels (Control vs. Treatment Round + Contribution over Period)
+```{r figure 1 combined, fig.width=8, fig.height=9}
+
+# panel B's legend keys (line + ribbon fill) don't match panel A's (point + line),
+# so guides = "collect" places them side by side instead of merging; suppress panel
+# B's legend entirely and let panel A's be the one shared legend for the figure
+figure1 <- (fig1_panelA / (fig1_panelB + guides(colour = "none", fill = "none"))) +
+  plot_annotation(tag_levels = "A") +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "top")
+
+figure1
+
+ggsave(paper_path("figures", "results", "figure1.png"), figure1,
+       width = 8, height = 9, dpi = 300, bg = "white")
 
 ```
 
@@ -722,11 +657,30 @@ nice_table((emmeans(model_h2_ols, pairwise ~ condition, adjust = "holm")$contras
 coeftest(model_h2_ols, vcov = vcovCL(model_h2_ols, cluster = ~ group_id))
 
 
+# Reference = demonstration, not control (the project default): control has zero
+# valid rows for this outcome (no control-period activism turnout to speak of), so a
+# control reference leaves the model rank-deficient and R silently drops a different
+# dummy instead.
 model_h2_ols_rob <- estimatr::lm_robust(player.chose_activism ~ condition + others_contribution_lag + NegDev_lag + PosDev_lag + period,
-                   data = df_long,
+                   data = df_long %>% mutate(condition = relevel(factor(condition), ref = "demonstration")),
                    clusters = group_id,
                    se_type = "CR2") #because small sample
 tab_model(model_h2_ols_rob)
+
+# Save lagged-controls model for the paper (Table \ref{tab:model_lag})
+save_reg_table(list("Activism Turnout" = model_h2_ols_rob),
+               path = paper_path("tables", "results", "model_lag.tex"))
+
+# Main-table version: condition + period only, no lagged controls -- matches
+# the H1/H3 specification and feeds the "Activism Turnout" column of
+# tables/results/mainreg.tex. The lagged specification above is the dedicated
+# test of the Fehr (2000) reciprocity hypothesis (Table \ref{tab:model_lag}).
+# Reference = demonstration, not control, for the same reason as model_h2_ols_rob above.
+model_h2_main_rob <- estimatr::lm_robust(player.chose_activism ~ condition + period,
+                   data = df_long %>% mutate(condition = relevel(factor(condition), ref = "demonstration")),
+                   clusters = group_id,
+                   se_type = "CR2")
+tab_model(model_h2_main_rob)
 
 
 ```
@@ -792,17 +746,22 @@ coeftest(model_h2_probit, vcov = vcov_h2_probit)
 #### 2a. Main Effects (Preregistered)
 ```{r turnout by condition, fig.width=8, fig.height=5}
 
-df_activism_group %>%
+fig_2_1_activismrate <- df_activism_group %>%
   ggplot(aes(x = condition, y = turnout_rate, fill = condition)) +
   ggdist::stat_halfeye(alpha = 0.7, adjust = 0.8) +
   geom_boxplot(width = 0.1, outlier.shape = NA, alpha = 0.4) +
   scale_fill_manual(values = condition_colors) +
-  labs(title = "Activism Turnout Rate by Condition",
-       subtitle = "Treatment rounds only (periods 8–14)",
+  labs(#title = "Activism Turnout Rate by Condition",
+       #subtitle = "Treatment rounds only (periods 8–14)",
        x = "Condition", y = "Turnout Rate (%)", fill = NULL) +
   theme_classic(base_size = 12) +
   theme(legend.position = "none") +
   geom_hline(yintercept = 50, colour = "darkgray", alpha = .4, size = 0.8, linetype = "dashed")
+
+fig_2_1_activismrate
+
+ggsave(paper_path("figures", "results", "2.1.activismrate.png"), fig_2_1_activismrate,
+       width = 8, height = 5, dpi = 300, bg = "white")
 
 ```
 
@@ -810,7 +769,7 @@ df_activism_group %>%
 ```{r turnout over time, fig.width=9, fig.height=5}
 
 #on group level data
-df_activism_group %>%
+fig_2_1_activismrateovertime <- df_activism_group %>%
   group_by(period, condition) %>%
   summarise(
     mean_turnout = mean(turnout_rate, na.rm = TRUE),
@@ -822,11 +781,16 @@ df_activism_group %>%
                   fill = condition), alpha = 0.15, colour = NA) +
   scale_colour_manual(values = treatment_colors) +
   scale_fill_manual(values = treatment_colors) +
-  labs(title = "Activism Turnout Rate Over Time",
-       subtitle = "Treatment rounds only (periods 8-14)",
+  labs(#title = "Activism Turnout Rate Over Time",
+       #subtitle = "Treatment rounds only (periods 8-14)",
        x = "Period", y = "Mean Turnout Rate (%)", colour = NULL, fill = NULL) +
   theme_classic(base_size = 12) +
   xlim(c(8, 14))
+
+fig_2_1_activismrateovertime
+
+ggsave(paper_path("figures", "results", "2.1.activismrateovertime.png"), fig_2_1_activismrateovertime,
+       width = 9, height = 5, dpi = 300, bg = "white")
 
 #on individual-level data
 df_long %>%
@@ -841,8 +805,8 @@ df_long %>%
                   fill = condition), alpha = 0.15, colour = NA) +
   scale_colour_manual(values = treatment_colors) +
   scale_fill_manual(values = treatment_colors) +
-  labs(title = "Activism Turnout Rate Over Time",
-       subtitle = "Treatment rounds only (periods 8-14)",
+  labs(#title = "Activism Turnout Rate Over Time",
+       #subtitle = "Treatment rounds only (periods 8-14)",
        x = "Period", y = "Mean Turnout Rate (%)", colour = NULL, fill = NULL) +
   theme_classic(base_size = 12) +
   xlim(c(8, 14)) 
@@ -859,7 +823,8 @@ ggerrorplot(df_long,
             position = position_jitter(.2), alpha = .8, orientation =  "horiz", add = "mean_se",
             na.rm = T, sort.val = "asc") +
   geom_hline(yintercept = 0, colour = "darkgray", alpha = .4, size = 0.8, linetype = "dashed") + 
-  labs(x = "AI Feedback Type", y = "Denialism Change (pp)", title = "Conversation effects by condition") +  # Custom legend title
+  labs(x = "Condition", y = "Rate"#, title = "Contribution & Activism Rate by Condition"
+       ) +  # Custom legend title
   theme_classic()  +
   theme(legend.title = element_text(size = 10, face = "bold"))
 
@@ -919,7 +884,7 @@ df_long %>%
   geom_boxplot(alpha = 0.7) +
   geom_jitter(width = 0.1, alpha = 0.1, size = 1.5) +
   scale_fill_manual(values = condition_colors) +
-  labs(title = "Group Welfare by Condition",
+  labs(#title = "Group Welfare by Condition",
        x = "Condition", y = "Total Group Earnings (per period)",
        fill = NULL) +
   theme_classic(base_size = 12) +
@@ -933,7 +898,7 @@ df_long %>%
   geom_boxplot(alpha = 0.7) +
   geom_jitter(width = 0.1, alpha = 0.1, size = 1.5) +
   scale_fill_manual(values = condition_colors) +
-  labs(title = "Group Welfare by Condition (Time-Normalized)",
+  labs(#title = "Group Welfare by Condition (Time-Normalized)",
        x = "Condition", y = "Welfare per Second (per period)",
        fill = NULL) +
   theme_classic(base_size = 12) +
@@ -990,11 +955,13 @@ phase_plot <- function(model, y_label, title_label) {
     geom_line(linewidth = 0.8) +
     geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error), width = 0.1) +
     scale_colour_manual(values = treatment_colors) +
-    labs(title = title_label, x = NULL, y = y_label, colour = NULL) +
+    labs(#title = title_label,
+         x = NULL, y = y_label, colour = NULL) +
     theme_classic(base_size = 12) +
     theme(legend.position = "top")
 
-  if (nrow(brk) > 0) {
+  # significance-star brackets disabled (headers/stars now live in the caption, not the figure)
+  if (FALSE && nrow(brk) > 0) {
     p <- p +
       geom_segment(data = brk, aes(x = x_off, xend = x_off, y = y1, yend = y2),
                    inherit.aes = FALSE, colour = "grey40", linewidth = 0.4) +
@@ -1004,15 +971,18 @@ phase_plot <- function(model, y_label, title_label) {
                    inherit.aes = FALSE, colour = "grey40", linewidth = 0.4) +
       geom_text(data = brk, aes(x = x_off + 0.04, y = (y1 + y2) / 2, label = stars),
                 inherit.aes = FALSE, colour = "grey40", size = 4) +
-      coord_cartesian(clip = "off") +
-      theme(plot.margin = margin(5, 40, 5, 5)) 
+      coord_cartesian(clip = "off")
   }
   p
 }
 
 # raw welfare
-phase_plot(model_h3b_ols, "EMM Group Welfare",
+fig_3_3_welfareprepost <- phase_plot(model_h3b_ols, "EMM Group Welfare",
            "Group Welfare: Control vs Treatment Rounds by Assigned Condition")
+fig_3_3_welfareprepost
+
+ggsave(paper_path("figures", "results", "3.3.welfareprepost.png"), fig_3_3_welfareprepost,
+       width = 7, height = 4, dpi = 300, bg = "white")
 
 # time-normalized welfare
 phase_plot(model_h3bnorm_ols, "EMM Welfare per Second",
@@ -1043,7 +1013,7 @@ df_long %>%
            colour = "grey40", size = 3) +
   scale_colour_manual(values = condition_colors) +
   scale_fill_manual(values = condition_colors) +
-  labs(title = "Group Welfare Over Time by Condition",
+  labs(#title = "Group Welfare Over Time by Condition",
        x = "Period", y = "Mean Group Welfare", colour = NULL, fill = NULL) +
   theme_classic(base_size = 12) +
   xlim(c(1, 14))  +
@@ -1070,7 +1040,7 @@ df_long %>%
            colour = "grey40", size = 3) +
   scale_colour_manual(values = treatment_colors) +
   scale_fill_manual(values = treatment_colors) +
-  labs(title = "Group Welfare Over Time by Assigned Condition",
+  labs(#title = "Group Welfare Over Time by Assigned Condition",
        x = "Period", y = "Mean Group Welfare (Points)", colour = NULL, fill = NULL) +
   theme_classic(base_size = 12) +
   xlim(c(1, 14)) +
@@ -1093,6 +1063,14 @@ summary(df_long$welfare_fullcoop)
 model_efficiency <- lm(efficiency ~ condition + period, data = df_long)
 vcov_efficiency  <- vcovCL(model_efficiency, cluster = ~ group_id)
 coeftest(model_efficiency, vcov = vcov_efficiency)
+
+# Cluster-robust version (CR2), matching the other mainreg models -- feeds the
+# "Efficiency" column of tables/results/mainreg.tex
+model_efficiency_rob <- estimatr::lm_robust(efficiency ~ condition + period,
+                   data = df_long,
+                   clusters = group_id,
+                   se_type = "CR2")
+tab_model(model_efficiency_rob)
 
 model_efficiency_emm <- emmeans(model_efficiency, pairwise ~ condition, adjust = "holm")
 
@@ -1128,25 +1106,30 @@ sig_eff <- tidy(model_efficiency_emm$contrasts) %>%
   left_join(emm_eff_vals, by = c("grp2" = "condition")) %>% rename(e2 = emm_est) %>%
   mutate(y_pos = pmax(e1, e2) + 2 + (row_number() - 1) * 3)
 
-ggplot(tidy(model_efficiency_emm$emmeans), aes(x = reorder(condition, estimate), y = estimate, colour = condition)) +
+fig_5_efficiency <- ggplot(tidy(model_efficiency_emm$emmeans), aes(x = reorder(condition, estimate), y = estimate, colour = condition)) +
   geom_point(size = 4) +
   geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error), width = 0.1) +
-  geom_signif(
-    comparisons  = map2(sig_eff$grp1, sig_eff$grp2, ~ c(.x, .y)),
-    annotations  = sig_eff$stars,
-    y_position   = sig_eff$y_pos,
-    tip_length   = 0.01,
-    vjust        = -0.2,
-    colour       = "darkgray") +
+  #geom_signif(
+  #  comparisons  = map2(sig_eff$grp1, sig_eff$grp2, ~ c(.x, .y)),
+  #  annotations  = sig_eff$stars,
+  #  y_position   = sig_eff$y_pos,
+  #  tip_length   = 0.01,
+  #  vjust        = -0.2,
+  #  colour       = "darkgray") +
   scale_colour_manual(values = condition_colors) +
-  labs(title = "Estimated Marginal Means: Efficiency by Condition",
-       subtitle = "OLS with cluster-robust SEs (relative to control)",
+  labs(#title = "Estimated Marginal Means: Efficiency by Condition",
+       #subtitle = "OLS with cluster-robust SEs (relative to control)",
        x = "Condition", y = "Efficiency (0-100%)",
        colour = NULL) +
   theme_classic(base_size = 12) +
   theme(legend.position = "none") +
   coord_flip() +
   ylim(c(60, 90))
+
+fig_5_efficiency
+
+ggsave(paper_path("figures", "results", "5.efficiency.png"), fig_5_efficiency,
+       width = 7, height = 5, dpi = 300, bg = "white")
 
 ```
 
@@ -1176,6 +1159,25 @@ df_long %>%
   kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
 
 
+
+df_long %>%
+  dplyr::filter(is_treatment_round == 1) %>%
+  dplyr::mutate(activist = factor(player.chose_activism, labels = c("Non-Activist", "Activist"))) %>%
+  dplyr::group_by(player.chose_activism) %>%
+  dplyr::summarise(n = n(),
+    "Wage" = mean(wage, na.rm = TRUE),
+    "Norm Wage" = mean(wage, na.rm = TRUE) / mean(actual_effort_time, na.rm = TRUE),
+    
+    'Avg Contribution %' = mean(relative_contribution, na.rm = TRUE),
+    "Contribution % (SD)" = sd(relative_contribution, na.rm = TRUE),
+    "Contribution" = mean(contribution, na.rm = TRUE),
+    
+    "Avg Payoff" = mean(round_payoff, na.rm = TRUE),
+    "Avg Added Wage" = mean(round_payoff, na.rm = TRUE) - mean(wage, na.rm = TRUE),
+    .groups = "drop") %>%
+  kbl(digits = 2, caption = "Contribution Rate: Activists vs. Non-activists") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+
 ```
 
 ```{r activist vs nonactivist model}
@@ -1198,19 +1200,24 @@ hactiv.lmer <- lmer(relative_contribution ~ treatment_assigned * player.chose_ac
            data = df_long) 
 tab_model(hactiv.lmer)
 
-interact_plot(hactiv.lmer, modx = treatment_assigned, pred = player.chose_activism,
+fig_4_activism_cont <- interact_plot(hactiv.lmer, modx = treatment_assigned, pred = player.chose_activism,
               modx.labels = c("Demonstration", "Petition", "Roadblock"),
               legend.main = "Condition",
               plot.points = T, rug = T, jitter = .1, linearity.check = FALSE, point.alpha = .3,
               #interval = T,
               robust = T, line.thickness = 2, int.type = "confidence",
               colors = c("#4E79A7FF", "#E15759FF","#F28E2BFF")) +
-  labs(title = "Interaction Effects: Contribution Rates & Activism Decision",
+  labs(#title = "Interaction Effects: Contribution Rates & Activism Decision",
        x = "If Player Chose Activism", y = "Contribution Rate (0-100%)",
        colour = "Condition") +
   theme_classic(base_size = 12) +
   theme(legend.position = "top") +
-  geom_hline(yintercept = 50, colour = "darkgray", alpha = .4, size = 0.8, linetype = "dashed") 
+  geom_hline(yintercept = 50, colour = "darkgray", alpha = .4, size = 0.8, linetype = "dashed")
+
+fig_4_activism_cont
+
+ggsave(paper_path("figures", "results", "4.activism&cont.png"), fig_4_activism_cont,
+       width = 7, height = 5, dpi = 300, bg = "white")
 
 ```
 
@@ -1265,9 +1272,8 @@ h1.1.lmer <- lmer(relative_contribution ~ treatment_assigned * is_treatment_roun
            data = df_long)
 summary(h1.1.lmer)
 
-emmeans(h1.1.lmer, pairwise ~ treatment_assigned,
-                         at = list(is_treatment_round = 1), adjust = "holm")$contrasts 
-nice_table(pairs(emmeans(h1.1.lmer, pairwise ~ is_treatment_round:treatment_assigned, adjust = "holm")$contrasts))
+nice_table(emmeans(h1.1.lmer, pairwise ~ treatment_assigned,
+                         at = list(is_treatment_round = 1), adjust = "holm")$contrasts)
 
 
     #alt plots
@@ -1295,7 +1301,7 @@ ggerrorplot(df_long,
             position = position_jitter(.2), alpha = .8, orientation =  "horiz", add = "mean_se",
             na.rm = T, sort.val = "asc") +
   geom_hline(yintercept = 50, colour = "darkgray", alpha = .4, size = 0.8, linetype = "dashed") + 
-  labs(x = "AI Feedback Type", y = "Denialism Change (pp)", title = "Conversation effects by condition"#, 
+  labs(x = "AI Feedback Type", y = "Denialism Change (pp)"#, title = "Conversation effects by condition",
        #color = "is_treatment_round", fill = "is_treatment_round"
        ) +  # Custom legend title
   theme_classic()  +
@@ -1306,11 +1312,19 @@ ggerrorplot(df_long,
 
 
 #2. ACTIVISM TURNOUT
-h2.1.lmer <- lmer(player.chose_activism ~ treatment_assigned + others_contribution_lag + NegDev_lag + PosDev_lag + period + 
-                    (1 | group_id) + (1 | participant.code), 
+h2.1.lmer <- lmer(player.chose_activism ~ treatment_assigned + others_contribution_lag + NegDev_lag + PosDev_lag + period +
+                    (1 | group_id) + (1 | participant.code),
            data = df_long) #is_treatment_round = 1 only
 summary(h2.1.lmer)
 nice_table(pairs(emmeans(h2.1.lmer, pairwise ~ treatment_assigned, adjust = "holm")$contrasts))
+
+# Main-table version: treatment_assigned + period only, no lagged controls -- matches
+# the period-only H2 specification used in mainreg.tex; feeds the "Activism Turnout"
+# column of tables/results/lmer-interaction.tex
+h2.1_main.lmer <- lmer(player.chose_activism ~ treatment_assigned + period +
+                    (1 | group_id) + (1 | participant.code),
+           data = df_long)
+summary(h2.1_main.lmer)
 
 
 
@@ -1341,14 +1355,23 @@ h1.1clean.lmer <- lmer(relative_contribution ~ treatment_assigned * is_treatment
                     (1 | group_id) + (1 | participant.code), 
            data = df_long_clean)
 
-h2.1clean.lmer <- lmer(player.chose_activism ~ treatment_assigned + others_contribution_lag + NegDev_lag + PosDev_lag + period + 
-                    (1 | group_id) + (1 | participant.code), 
+h2.1clean.lmer <- lmer(player.chose_activism ~ treatment_assigned + others_contribution_lag + NegDev_lag + PosDev_lag + period +
+                    (1 | group_id) + (1 | participant.code),
            data = df_long_clean) #is_treatment_round = 1 only
 
-h3.1clean.lmer <- lmer(welfare ~ treatment_assigned * is_treatment_round + period + (1 | group_id) + (1 | participant.code), 
+# Main-table version: treatment_assigned + period only, no lagged controls -- matches
+# h2.1_main.lmer; feeds the "Activism Turnout" column of tables/results/lmer-interaction-comp.tex
+h2.1clean_main.lmer <- lmer(player.chose_activism ~ treatment_assigned + period +
+                    (1 | group_id) + (1 | participant.code),
            data = df_long_clean)
 
-h3.1bclean.lmer <- lmer(norm_welfare ~ treatment_assigned * is_treatment_round + period + (1 | group_id) + (1 | participant.code), 
+h3.1clean.lmer <- lmer(welfare ~ treatment_assigned * is_treatment_round + period + (1 | group_id) + (1 | participant.code),
+           data = df_long_clean)
+
+h3.1bclean.lmer <- lmer(norm_welfare ~ treatment_assigned * is_treatment_round + period + (1 | group_id) + (1 | participant.code),
+           data = df_long_clean)
+
+heffclean.lmer <- lmer(efficiency ~ treatment_assigned * is_treatment_round + period + (1 | group_id) + (1 | participant.code),
            data = df_long_clean)
 
 
@@ -1359,7 +1382,9 @@ h3.1bclean.lmer <- lmer(norm_welfare ~ treatment_assigned * is_treatment_round +
 ```{r clean regression table - preregistered models}
 
 #main preregisted effects, compared to control period
-tab_model(model_h1_ols_rob,model_h2_ols_rob,model_h3_ols_rob,model_h3norm_ols_rob,
+#H2 (Activism Turnout) uses model_h2_main_rob: condition + period only, matching
+#the period-only specification of the other three outcomes
+tab_model(model_h1_ols_rob,model_h2_main_rob,model_h3_ols_rob,model_h3norm_ols_rob,
           show.se = T, #auto.label = T,
           collapse.se=T,
   col.order = c("est","se","p"),
@@ -1369,9 +1394,14 @@ tab_model(model_h1_ols_rob,model_h2_ols_rob,model_h3_ols_rob,model_h3norm_ols_ro
 
 
 library(modelsummary)
-modelsummary(list(model_h1_ols_rob,model_h2_ols_rob,model_h3_ols_rob,model_h3norm_ols_rob),
-             output = "latex",
-             statistic = "({std.error}) {p.value}")
+
+# Save clean regression table for the paper (Table \ref{tab:mainreg})
+save_reg_table(list("(1) Contribution Rate" = model_h1_ols_rob,
+                     "(2) Activism Turnout"  = model_h2_main_rob,
+                     "(3.1) Welfare"         = model_h3_ols_rob,
+                     "(3.2) Welfare/sec"     = model_h3norm_ols_rob,
+                     "Efficiency"            = model_efficiency_rob),
+               path = paper_path("tables", "results", "mainreg.tex"))
 
 ```
 
@@ -1400,17 +1430,29 @@ tab_model(h1.lmer,h2.lmer,h3.lmer,h3b.lmer,
 
 
 #MAIN - interaction - mixed effects models - full sample
-tab_model(h1.1.lmer, h2.1.lmer,h3.1.lmer,h3.1b.lmer,
+#H2 (Activism Turnout) uses h2.1_main.lmer: treatment_assigned + period only, matching
+#the period-only specification used in mainreg.tex (lags tested separately in model_lag.tex)
+tab_model(h1.1.lmer, h2.1_main.lmer,h3.1.lmer,h3.1b.lmer,
           show.se = T, #auto.label = T,
           collapse.se=T,
   col.order = c("est","se","p"),
   dv.labels = c("(1) Contribution Rate","(2) Activism Turnout", "(3.1) Welfare", "(3.2) Welfare/sec"),
   p.style = "numeric",digits = 3,
   p.adjust = "holm")
+
+# Save clean regression table for the paper (Table A2, \ref{tab:lmer-interaction})
+save_reg_table(list("(1) Contribution Rate" = h1.1.lmer,
+                     "(2) Activism Turnout"  = h2.1_main.lmer,
+                     "(3.1) Welfare"         = h3.1.lmer,
+                     "(3.2) Welfare/sec"     = h3.1b.lmer,
+                     "Efficiency"            = heff.lmer),
+               path = paper_path("tables", "results", "lmer-interaction.tex"))
 
 
 #interaction - mixed effects models - complete responses only
-tab_model(h1.1clean.lmer, h2.1clean.lmer,h3.1clean.lmer,h3.1bclean.lmer,
+#H2 (Activism Turnout) uses h2.1clean_main.lmer: treatment_assigned + period only,
+#matching the period-only specification used in the full-sample table
+tab_model(h1.1clean.lmer, h2.1clean_main.lmer,h3.1clean.lmer,h3.1bclean.lmer,
           show.se = T, #auto.label = T,
           collapse.se=T,
   col.order = c("est","se","p"),
@@ -1418,25 +1460,24 @@ tab_model(h1.1clean.lmer, h2.1clean.lmer,h3.1clean.lmer,h3.1bclean.lmer,
   p.style = "numeric",digits = 3,
   p.adjust = "holm")
 
+# Save clean regression table for the paper (Table A5, \ref{tab:mainreg_controls})
+save_reg_table(list("(1) Contribution Rate" = h1.1clean.lmer,
+                     "(2) Activism Turnout"  = h2.1clean_main.lmer,
+                     "(3.1) Welfare"         = h3.1clean.lmer,
+                     "(3.2) Welfare/sec"     = h3.1bclean.lmer,
+                     "Efficiency"            = heffclean.lmer),
+               path = paper_path("tables", "results", "lmer-interaction-comp.tex"))
 
 ```
 
 # Exploratory Analyses
 
 ## Robustness: Controls (Age, Gender, Education, etc.)
-```{r robustness controls, eval=FALSE, include=FALSE}
 
-# Merge in questionnaire demographics once available
-df_long_controls <- df_long %>%
-   left_join(df_questionnaire, by = "participant.code")
-
-model_h1_controls <- lm(relative_contribution ~ condition + period +
-                          num_activists_lag + age + gender + education,
-   data = df_long_controls)
-
-coeftest(model_h1_controls, vcov = vcovCL(model_h1_controls, cluster = ~ group_id))
-
-```
+Moved to its own script, `03_robustness_controls.Rmd` -- builds Tables A3
+(`tables/results/mainreg_controls2.tex`) and A4
+(`tables/results/mainreg_more_controls2.tex`) from `df_long`'s own
+questionnaire columns.
 
 ## Temporal Dynamics: Contribution Trends
 ```{r temporal contrib}
@@ -1572,11 +1613,32 @@ cat("95% + 20% attrition buffer:", ceiling(mg95 * 1.2), "groups /",
 
 ```
 
-```{r git-commit}
+```{r git-commit, eval=FALSE, include=FALSE}
 
 repo_root <- trimws(system("git rev-parse --show-toplevel", intern = TRUE))
-system(paste0("git -C '", repo_root, "' add analysis/"))
-system(paste0("git -C '", repo_root, "' commit -m \"Update analysis output - ", Sys.time(), "\""))
-system(paste0("git -C '", repo_root, "' push origin main"))
+git <- function(...) system2("git", c("-C", shQuote(repo_root), shQuote(c(...))))
+
+git("add", "analysis/", "tables/", "figures/")
+git("commit", "-m", paste0("Update analysis output - ", Sys.time()))
+
+# Pull in any remote changes (e.g. files added via github.com) before pushing,
+# so a diverged remote fails loudly here instead of silently dropping the push.
+git("fetch", "origin", "main")
+behind <- as.integer(trimws(system2("git",
+  c("-C", shQuote(repo_root), "rev-list", "--count", "HEAD..origin/main"), stdout = TRUE)))
+
+if (behind > 0) {
+  merge_status <- git("merge", "origin/main", "--no-edit")
+  if (merge_status != 0) {
+    stop("git-commit chunk: merge with origin/main failed, likely a conflict. ",
+         "Resolve manually (git status) in a terminal, then re-run this chunk.")
+  }
+}
+
+push_status <- git("push", "origin", "main")
+if (push_status != 0) {
+  stop("git-commit chunk: push to origin/main failed. ",
+       "Run `git status` / `git log --oneline -5` manually to diagnose.")
+}
 
 ```

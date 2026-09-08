@@ -1,0 +1,264 @@
+---
+title: "Activism Pilot: Data Cleaning and Merging"
+author: "Shaye"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+---
+
+# Setup & Dependencies
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(readxl)
+  library(here)
+})
+
+# Robust path resolver across VS Code, RStudio, and command-line execution
+find_path <- function(...) {
+  # 1. Try relative to here()
+  p1 <- here::here(...)
+  if (file.exists(p1) || dir.exists(p1)) return(p1)
+  
+  # 2. Try relative to here("analysis", ...)
+  p2 <- here::here("analysis", ...)
+  if (file.exists(p2) || dir.exists(p2)) return(p2)
+  
+  # 3. Try from current working directory
+  p3 <- file.path(...)
+  if (file.exists(p3) || dir.exists(p3)) return(p3)
+  
+  # 4. Try one level up
+  p4 <- file.path("..", ...)
+  if (file.exists(p4) || dir.exists(p4)) return(p4)
+  
+  return(p1)
+}
+```
+
+# Raw Data Ingestion
+
+```{r load-raw-data}
+# 1. Load raw oTree session wide exports
+s1_path <- find_path("data", "raw", "raw_s1_all_apps_wide_2026-06-09-2.csv")
+s2_path <- find_path("data", "raw", "raw_s2_all_apps_wide-2026-06-09-2.csv")
+
+df_raw_s1 <- read.csv(s1_path, header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+df_raw_s2 <- read.csv(s2_path, header = TRUE, stringsAsFactors = FALSE, na.strings = c("", "NA"))
+
+# Combine oTree sessions
+df_wide_raw <- bind_rows(df_raw_s1, df_raw_s2)
+
+# Filter out demo sessions
+df_wide <- df_wide_raw %>%
+  filter(session.is_demo == 0) %>%
+  mutate(pct_complete = rowMeans(!is.na(.)) * 100)
+
+# Add session number and seat number for joining with questionnaire
+df_wide <- df_wide %>%
+  mutate(
+    session_num = case_when(
+      session.code == "ahosr93r" ~ 1L,
+      session.code == "tdmddbpq" ~ 2L,
+      TRUE ~ NA_integer_
+    ),
+    seat_num = activism.1.player.seat_number
+  )
+```
+
+# Questionnaire & Demographics Ingestion
+
+```{r load-questionnaire}
+quest_path <- find_path("data", "raw", "Questionnaire.xlsx")
+
+# Load session questionnaire sheets (handling various NA strings)
+q_s1 <- readxl::read_excel(quest_path, sheet = "Session1", na = c("", "NA", "-NA-"))
+q_s2 <- readxl::read_excel(quest_path, sheet = "Session2", na = c("", "NA", "-NA-"))
+
+# Harmonize column types before merging
+q_s1 <- q_s1 %>% mutate(
+  Political_Orientation_0_10    = as.numeric(Political_Orientation_0_10),
+  General_Trust_0_10            = as.numeric(General_Trust_0_10),
+  Risk_Willingness_0_10         = as.numeric(Risk_Willingness_0_10),
+  Monthly_Disposable_Income_EUR = as.character(Monthly_Disposable_Income_EUR)
+)
+
+q_s2 <- q_s2 %>% mutate(
+  Political_Orientation_0_10    = as.numeric(Political_Orientation_0_10),
+  General_Trust_0_10            = as.numeric(General_Trust_0_10),
+  Risk_Willingness_0_10         = as.numeric(Risk_Willingness_0_10),
+  Monthly_Disposable_Income_EUR = as.character(Monthly_Disposable_Income_EUR)
+)
+
+df_demographics <- bind_rows(q_s1, q_s2) %>%
+  rename(
+    session_num = Session,
+    seat_num    = Booth_Number
+  )
+
+# Merge questionnaire demographics into df_wide
+df_wide <- df_wide %>%
+  left_join(df_demographics, by = c("session_num", "seat_num"))
+
+# Clean subset (participants who completed the study through post-experimental questionnaire)
+df_clean <- df_wide %>%
+  filter(!is.na(questionnaire.1.player.q3_personal_cost))
+```
+
+# Reshape to Panel (Long Format)
+
+```{r pivot-longer}
+df_long <- df_wide %>%
+  pivot_longer(
+    cols          = matches("^activism\\.\\d+\\."),
+    names_to      = c("app_round", ".value"),
+    names_pattern = "activism\\.(\\d+)\\.(.*)"
+  ) %>%
+  mutate(app_round = as.integer(app_round))
+```
+
+# Variable Transformation & Feature Engineering
+
+```{r recode-variables}
+df_long <- df_long %>%
+  rename(
+    session_code       = session.code,
+    participant_id     = participant.id_in_session,
+    treatment_assigned = participant.treatment,
+    final_payoff       = participant.payoff,
+    selected_round     = participant.selected_round,
+    id_in_group        = `player.id_in_group`,
+    
+    # Round-level variables
+    wage               = `player.wage`,
+    contribution       = `player.contribution`,
+    round_payoff       = `player.round_payoff`,
+    effort_score       = `player.effort_score`,
+    actual_effort_time = `player.actual_effort_time`,
+    group_raw_id       = `group.id_in_subsession`,
+    num_activists      = `group.num_activists`,
+    num_roadblockers   = `group.num_roadblockers`,
+    round_treatment    = `group.treatment`,
+    period             = `subsession.round_number`
+  ) %>%
+  mutate(
+    app_round_2        = if_else(app_round > 7, app_round - 7, app_round),
+    group_id           = paste(session_code, group_raw_id, sep = "_"),
+    participant_seat   = if_else(session_code == "ahosr93r",
+                                 paste(participant.label, "1", sep = "_"),
+                                 if_else(session_code == "tdmddbpq",
+                                         paste(participant.label, "2", sep = "_"), "")),
+    is_treatment_round = as.numeric(if_else(period <= 7, 0, 1)),
+    condition          = if_else(is_treatment_round == 1, treatment_assigned, "control"),
+    condition          = factor(condition, levels = c("control", "petition", "demonstration", "roadblock")),
+    activism_rate      = if_else(is_treatment_round == 1, (num_activists / 4) * 100, NA_real_),
+    chose_activism     = if_else(num_activists > 0, 1, 0),
+    contribution       = as.numeric(contribution),
+    wage               = as.numeric(wage),
+    chose_activism     = as.numeric(chose_activism),
+    round_payoff       = as.numeric(round_payoff),
+    relative_contribution = if_else(!is.na(wage) & wage > 0, (contribution / wage) * 100, NA_real_),
+    norm_wage          = wage / actual_effort_time,
+    norm_payoff        = round_payoff / actual_effort_time,
+    added_wage         = if_else(!is.na(wage) & wage > 0, round_payoff - wage, NA_real_)
+  ) %>%
+  select(-(c(participant.visited:participant.mturk_assignment_id,
+             session.label:session.treatment,
+             player.role, questionnaire.1.player.role,
+             group.total_contribution, player.payoff)))
+```
+
+# Peer Effects, Group Deviations & Lags
+
+```{r compute-group-stats}
+df_long <- df_long %>%
+  group_by(group_id, period) %>%
+  mutate(
+    group_mean_contribution  = mean(contribution, na.rm = TRUE),
+    group_total_contribution = if_else(is.na(contribution), NA_real_, sum(contribution, na.rm = TRUE)),
+    group_size               = if_else(is.na(contribution), NA_integer_, sum(!is.na(contribution))),
+    others_contribution      = if_else(group_size > 1 & !is.na(contribution),
+                                       ((group_mean_contribution * group_size) - contribution) / (group_size - 1), NA_real_),
+    total_wage               = if_else(is.na(wage), NA_real_, sum(wage, na.rm = TRUE)),
+    welfare                  = if_else(is.na(round_payoff), NA_real_, sum(round_payoff, na.rm = TRUE)),
+    norm_welfare             = if_else(is.na(round_payoff), NA_real_, sum(round_payoff, na.rm = TRUE) / actual_effort_time),
+    welfare_fullcoop         = if_else(is.na(round_payoff), NA_real_, sum(wage, na.rm = TRUE) * 1.6),
+    n_activists              = if_else(is.na(round_payoff), NA_real_, sum(num_activists, na.rm = TRUE)),
+    n_freeriders             = if_else(is.na(contribution), NA_integer_, sum(contribution == 0, na.rm = TRUE)),
+    efficiency               = if_else(!is.na(round_payoff), (welfare / welfare_fullcoop) * 100, NA_real_),
+    NegDev                   = pmax(0, group_mean_contribution - contribution, na.rm = FALSE),
+    PosDev                   = pmax(0, contribution - group_mean_contribution, na.rm = FALSE)
+  ) %>%
+  ungroup() %>%
+  arrange(participant.code, period) %>%
+  group_by(participant.code) %>%
+  mutate(
+    others_contribution_lag = lag(others_contribution),
+    NegDev_lag              = if_else(period >= 8, lag(NegDev), NA_real_),
+    PosDev_lag              = if_else(period >= 8, lag(PosDev), NA_real_),
+    NegDev_lag_full         = lag(NegDev),
+    PosDev_lag_full         = lag(PosDev)
+  ) %>%
+  ungroup() %>%
+  filter(group_size == 4)
+
+df_long_clean <- df_long %>%
+  filter(!is.na(questionnaire.1.player.q3_personal_cost))
+```
+
+# Participant Summaries
+
+```{r participant-summary}
+df_questionnaire <- df_wide %>%
+  select(session.code, participant.id_in_session, participant.treatment,
+         matches("^questionnaire\\.1\\.player"),
+         Age_Years, Nationality, Gender, Field_of_Study, Year_of_Study_Semester,
+         Degree_Programme, Work_Experience, Highest_Education_Level, Employment,
+         Monthly_Disposable_Income_EUR, Political_Orientation_0_10, General_Trust_0_10,
+         Risk_Willingness_0_10, Charitable_Donations) %>%
+  rename(session_code   = session.code,
+         participant_id = participant.id_in_session) %>%
+  mutate(participant.code = paste(session_code, participant_id, sep = "_"))
+
+df_participant <- df_long %>%
+  group_by(participant.code, group_id, session_code, treatment_assigned, condition, is_treatment_round) %>%
+  summarise(
+    mean_relative_contribution  = mean(relative_contribution, na.rm = TRUE),
+    mean_control_contribution   = mean(relative_contribution[period <= 7], na.rm = TRUE),
+    mean_treatment_contribution = mean(relative_contribution[period > 7], na.rm = TRUE),
+    final_relative_contribution = last(relative_contribution[!is.na(relative_contribution)]),
+    mean_num_activism           = mean(num_activists, na.rm = TRUE),
+    mean_payoff                 = mean(round_payoff, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(df_questionnaire, by = "participant.code")
+```
+
+# Export Processed Data
+
+```{r export-clean-data}
+# Determine processed directory path
+raw_dir <- dirname(find_path("data", "raw", "Questionnaire.xlsx"))
+proc_dir <- file.path(dirname(raw_dir), "processed")
+if (!dir.exists(proc_dir)) dir.create(proc_dir, recursive = TRUE)
+
+save(df_wide, df_clean,
+     df_long, df_long_clean,
+     df_participant, df_questionnaire,
+     file = file.path(proc_dir, "clean_dfs.RData"))
+
+write.csv(df_long, file.path(proc_dir, "df_long.csv"), row.names = FALSE)
+write.csv(df_wide, file.path(proc_dir, "df_wide.csv"), row.names = FALSE)
+
+cat("Data cleaning and merging completed successfully.\n")
+cat("Outputs saved to:\n  -", file.path(proc_dir, "clean_dfs.RData"),
+    "\n  -", file.path(proc_dir, "df_long.csv"),
+    "\n  -", file.path(proc_dir, "df_wide.csv"), "\n")
+```
